@@ -319,7 +319,7 @@ return function(FileContext: Context, AbstractSyntaxTree: AbstractSyntaxTree): s
 
 	if FileContext == "Server" then
 		StringBuilder.Push(
-			`export type BLINK_DROP_REASON = "Malformed" | "Oversized" | "Instances" | "Events" | "Budget"`
+			`export type BLINK_DROP_REASON = "Malformed" | "Oversized" | "Instances" | "Events" | "Budget" | "Queue"`
 		)
 		StringBuilder.Push(
 			`export declare const {Casing.SetDropHandler}: (handler?: (player: Player, reason: BLINK_DROP_REASON, count: number, detail: number) => void) => void`

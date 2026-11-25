@@ -34,6 +34,7 @@ export type InboundLimits = {
 	MaxInstancesPerPacket: number,
 	InboundBytesPerSecond: number,
 	PacketFloor: number,
+	MaxQueuedEvents: number,
 }
 
 local INBOUND_DEFAULTS: InboundLimits = table.freeze({
@@ -42,6 +43,7 @@ local INBOUND_DEFAULTS: InboundLimits = table.freeze({
 	MaxInstancesPerPacket = 1024,
 	InboundBytesPerSecond = 1048576, --> 1 MB a second per player; 0 turns the budget off
 	PacketFloor = 64, --> what a packet costs the budget at least, so floods of tiny packets still pay
+	MaxQueuedEvents = 256, --> events (and calls) kept for a listener that is not connected yet
 })
 
 export type Primitive = {

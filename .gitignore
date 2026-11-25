@@ -27,3 +27,6 @@ test/Sources/Issue.blink
 
 # Roundtrip test output (fork)
 test/Roundtrip/out/
+
+# Runtime test output (fork)
+test/Runtime/out/

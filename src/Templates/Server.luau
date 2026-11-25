@@ -28,7 +28,7 @@ local PlayersMap: {[Player]: BufferSave} = {}
 --> Inbound hardening (Thaiban City fork). Everything a client sends passes AcceptPacket before a byte
 --> of it is decoded, and is decoded under DecodePacket, so a hostile or broken packet costs at most
 --> its own events and never throws into the remote's connection.
-export type BLINK_DROP_REASON = "Malformed" | "Oversized" | "Instances" | "Events" | "Budget"
+export type BLINK_DROP_REASON = "Malformed" | "Oversized" | "Instances" | "Events" | "Budget" | "Queue"
 type DropHandler = (Player: Player, Reason: BLINK_DROP_REASON, Count: number, Detail: number) -> ()
 type DecodeErrorHandler = (Player: Player, Channel: string, Message: string, Count: number) -> ()
 
@@ -40,6 +40,11 @@ local Reports: {[Player]: {[string]: {number}}} = {}
 
 local Decoding = false
 local DecodeRemaining = 0
+
+--> How many entries each polled event's queue holds, so a client cannot grow one without bound.
+local PolledSizes: {[any]: number} = {}
+--> Events whose "no listener" hint has been printed once already.
+local QueueWarned: {[string]: boolean} = {}
 
 Players.PlayerRemoving:Connect(function(Player)
     PlayersMap[Player] = nil
@@ -89,8 +94,30 @@ local function ReportDrop(Player: Player, Reason: BLINK_DROP_REASON, Detail: num
         --> Spawned: a handler that throws or yields must not reach back into the connection.
         task.spawn(Handler, Player, Reason, Count, Detail)
     else
-        warn(`[Blink]: Refused {Count} packet(s) from {Player.Name} in the last second: {Reason} ({Detail}).`)
+        local Unit = if Reason == "Queue" then "event(s)" else "packet(s)"
+        warn(`[Blink]: Refused {Count} {Unit} from {Player.Name} in the last second: {Reason} ({Detail}).`)
     end
+end
+
+--> An event or call arrived for a listener that is not connected yet, and its queue is full. The hint is
+--> printed once per event for the developer; the refusals themselves are reported like any other drop.
+local function ReportQueueFull(Player: Player, Event: string, Index: number)
+    if not QueueWarned[Event] then
+        QueueWarned[Event] = true
+        warn(`[Blink]: The queue of "{Event}" is full ({MAX_QUEUED_EVENTS}), so further events are dropped until a listener is connected. Did you forget to implement one?`)
+    end
+
+    ReportDrop(Player, "Queue", Index)
+end
+
+--> Answers a call with a failure, the way an erroring listener is answered, so the client stops waiting.
+local function AnswerFailure(Player: Player, Index: number, InvocationIdentifier: number)
+    Load(PlayersMap[Player])
+    local Position = Allocate(3)
+    buffer.writeu8(SendBuffer, Position, Index)
+    buffer.writeu8(SendBuffer, Position + 1, InvocationIdentifier)
+    buffer.writeu8(SendBuffer, Position + 2, 0)
+    PlayersMap[Player] = Save()
 end
 
 local function ReportDecodeError(Player: Player, Channel: string, Failure: any)

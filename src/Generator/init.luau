@@ -790,9 +790,13 @@ function Declarations.Function(Declaration: Parser.Function)
 
 		Types.u8.Read("InvocationIdentifier", Block)
 		Block:Lines(Deserialize.Content, Block.Indent + 1)
-		Block:Compare("Calls[InvocationIdentifier]", "nil", "Not")
-			:Line(`task.spawn(Calls[InvocationIdentifier], Success, {ReturnArguments})`)
+		--> Fork: free the slot before resuming the caller, and drop the reply of a call that timed out.
+		Block:Line("local Call = Calls[InvocationIdentifier]")
+		Block:Compare("Call", "nil", "Not")
 			:Line("Calls[InvocationIdentifier] = nil")
+			:Compare("Call", "INVOCATION_TIMED_OUT", "Not")
+			:Line(`task.spawn(Call, Success, {ReturnArguments})`)
+			:End()
 			:End()
 
 		--> Function listener body
@@ -805,12 +809,23 @@ function Declarations.Function(Declaration: Parser.Function)
 			:End()
 			.Content
 
-		local Error = `"There was an exception while processing \\"{Name}\\"."`
+		local Timeout = Options.InvocationTimeout or Settings.ClientDefaults.InvocationTimeout
+		local TimeoutError =
+			`"\\"{Name}\\" got no reply from the server within {Timeout} second{Timeout == 1 and "" or "s"}."`
+		local Error =
+			`if Success == INVOCATION_TIMED_OUT then {TimeoutError} else "There was an exception while processing \\"{Name}\\"."`
+		--> Fork: the thread is registered once, and the timeout armed for it (when InvocationTimeout > 0).
+		local Register =
+			Blocks.Block():Line("local Thread = coroutine.running()"):Line("Calls[InvocationIdentifier] = Thread")
+		if Timeout > 0 then
+			Register:Line("task.delay(INVOCATION_TIMEOUT, ExpireInvocation, InvocationIdentifier, Thread)")
+		end
+
 		local Contents = Blocks.Block()
 			:Line("local InvocationIdentifier = Invoke()")
 			:Lines(Exhaust)
 			:Line(`{Util.GetPath(DataIdentifier, true, Scope)}({DataArguments}, InvocationIdentifier)`)
-			:Line("Calls[InvocationIdentifier] = coroutine.running()")
+			:Lines(Register.Content)
 			:Line(`local Success, {ReturnValues} = coroutine.yield()`)
 			:Compare("Success", "true", "Not")
 			:Line(`error({Error})`)
@@ -831,7 +846,7 @@ function Declarations.Function(Declaration: Parser.Function)
 				:Line("local InvocationIdentifier = Invoke()")
 				:Lines(Exhaust)
 				:Line(`{Util.GetPath(DataIdentifier, true, Scope)}({DataArguments}, InvocationIdentifier)`)
-				:Line("Calls[InvocationIdentifier] = coroutine.running()")
+				:Lines(Register.Content)
 				:Lines(OnCancel.Content, 1)
 				:Line(`local Success, {ReturnValues} = coroutine.yield()`)
 				:Compare("Success", "true", "Not")
@@ -1206,8 +1221,18 @@ function Generators.Event(
 		Types.u8.Write("InvocationIdentifier", Write)
 		if Function == "Return" then
 			Types.u8.Write("1", Write)
-			Types.u8.Read("Success", Read)
-			Read:Compare("Success", "1", "Not"):Line('error("Server encountered an error.")'):End()
+
+			--> Fork: a failure reply is [index, id, 0] with no value after it. Reading the success byte as
+			--> part of the value's block reserved the value's bytes too, so after a failure the cursor sat
+			--> past the next event. Read and check it on its own, ahead of the block.
+			Read:_lineFront("local Success = buffer.readu8(RecieveBuffer, Read(1))", Read.Indent)
+			Read:Advance(1)
+			Read:_lineFront("if Success ~= 1 then", Read.Indent)
+			Read:Advance(1)
+			Read:_lineFront('error("Server encountered an error.")', Read.Indent + 1)
+			Read:Advance(1)
+			Read:_lineFront("end", Read.Indent)
+			Read:Advance(1)
 		end
 	end
 
@@ -1423,6 +1448,14 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 
 	Noop.Push(`\})`, 0, 1)
 	Noop.Push(`return Returns :: {EVENTS_TYPE}`, 0, 1)
+
+	--> Fork: client constants, ahead of the client template that uses them.
+	local ClientLimits = {}
+	if Context == "Client" then
+		ClientLimits = {
+			`local INVOCATION_TIMEOUT = {Options.InvocationTimeout or Settings.ClientDefaults.InvocationTimeout}\n`,
+		}
+	end
 	Noop.Push(`end`, 0, 0)
 
 	Return.PushFront(`\nlocal Returns = table.freeze(\{`)
@@ -1455,6 +1488,7 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 		UserTypes.DumpLines(),
 		Noop.DumpLines(),
 		ServerLimits,
+		ClientLimits,
 		string.split(Source[2], "\r"),
 		Replication.DumpLines(),
 		Reliables.Content,

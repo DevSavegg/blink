@@ -30,6 +30,8 @@ Measured (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier1.txt`):
 - 100 KB of one-entity events stops at 1,024 events instead of 11,111 listener calls.
 
 ### Fixes found while triaging upstream's tracker (2026-11-25)
+- ✅ #107: an `Invoke` that got no reply waited forever and held its slot (one of 256). Tier 1 made that more likely, because a refused packet's calls are never answered. Calls now fail after `InvocationTimeout` seconds. A late reply is discarded, without reaching the next caller.
+- ✅ A failure reply (`[index, id, 0]`) put the client's cursor one byte too far, so every later event in that packet was decoded from the wrong offset. The success byte is now read on its own. Not in upstream's tracker.
 - ✅ Queues for listeners that aren't connected yet were unbounded, and warned once per event. A client could grow server memory and flood the output. They're now capped (`MaxQueuedEvents`), with a one-time hint per event. Not in upstream's tracker.
 
 ### Tier 2: decode speed (wire-compatible)
@@ -58,6 +60,12 @@ Run framing, streams/stamps, converters. They add a lot of code for little gain 
 
 The defaults are deliberately generous: an honest client sends one batched packet per frame. Measure a game's
 real per-player upload before tightening them in its schema. (Thaiban City's hasn't been measured yet.)
+
+Client option (wire-compatible):
+
+| Option | Default | What it does |
+|---|---|---|
+| `InvocationTimeout` | `30` | Seconds an `Invoke` waits for its reply before failing. `0` waits forever, as upstream does. |
 
 Server API added next to `StepReplication` (casing follows `option Casing`):
 
@@ -103,6 +111,9 @@ The compiler is pure Luau, so it can also run inside Studio, the way the plugin 
 
 ```bash
 lune run test/Runtime/Queues.luau
+```
+```bash
+lune run test/Runtime/Invoke.luau
 ```
 
 `test/Roundtrip` round-trips every kind of struct field, with optionals present and absent, through the generated

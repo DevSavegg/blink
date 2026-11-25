@@ -1,3 +1,7 @@
+> **Fork notice:** this is Thaiban City's maintained fork of Blink 0.18.x, focused on inbound hardening and
+> decode speed. It keeps the 0.18.9 schema language and wire format. See [FORK.md](FORK.md).
+> Upstream: [1Axen/blink](https://github.com/1Axen/blink).
+
 <div align="center">
   <img src="./docs/public/Logo.png" class="center">
 </div>

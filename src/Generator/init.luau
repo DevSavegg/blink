@@ -453,14 +453,25 @@ function Declarations.Event(Declaration: Parser.Event)
 					:End()
 			end
 
-			ListenerBound:Branch("Default")
-				:Compare(`#{Queue}`, "256", "Greater")
-				:Line(
-					`warn("[Blink]: Event queue of \\"{Declaration.Name}\\" exceeded 256, did you forget to implement a listener?")`
-				)
-				:End()
-				:Line(`table.insert({Queue}, \{{ListenerArguments}\} :: \{any\})`)
-				:End()
+			if Context == "Server" then
+				--> Fork: a client decides how much is queued here, so the queue is capped.
+				ListenerBound:Branch("Default")
+					:Compare(`#{Queue}`, "MAX_QUEUED_EVENTS", "Less")
+					:Line(`table.insert({Queue}, \{{ListenerArguments}\} :: \{any\})`)
+					:Branch("Default")
+					:Line(`ReportQueueFull(Player, "{Declaration.Name}", {Index})`)
+					:End()
+					:End()
+			else
+				ListenerBound:Branch("Default")
+					:Compare(`#{Queue}`, "256", "Greater")
+					:Line(
+						`warn("[Blink]: Event queue of \\"{Declaration.Name}\\" exceeded 256, did you forget to implement a listener?")`
+					)
+					:End()
+					:Line(`table.insert({Queue}, \{{ListenerArguments}\} :: \{any\})`)
+					:End()
+			end
 
 			Listener = Blocks.Function(Casing.On, ContextArguments, `() -> ()`, true)
 				:Line(IsSingle and `{Connection} = Listener` or `table.insert({Connection}, Listener)`)
@@ -497,21 +508,34 @@ function Declarations.Event(Declaration: Parser.Event)
 		end
 
 		Channel.Listening = true
-		Block:Line(
-			`Push({Queue}, table.pack({Context == "Server" and "Player, " or ""}{Util.GetPath(Identifier, false, Scope)}()))`
-		)
+		if Context == "Server" then
+			--> Fork: decode first, so a refused event still moves the cursor past itself, then cap the queue
+			--> at MAX_QUEUED_EVENTS per player slot.
+			Block:Line(`local Arguments = table.pack(Player, {Util.GetPath(Identifier, false, Scope)}())`)
+			Block:Compare(`(PolledSizes[{Queue}] or 0)`, "MAX_QUEUED_EVENTS * math.max(Players.MaxPlayers, 1)", "Less")
+				:Line(`PolledSizes[{Queue}] = (PolledSizes[{Queue}] or 0) + 1`)
+				:Line(`Push({Queue}, Arguments)`)
+				:Branch("Default")
+				:Line(`ReportQueueFull(Player, "{Declaration.Name}", {Index})`)
+				:End()
+		else
+			Block:Line(
+				`Push({Queue}, table.pack({Context == "Server" and "Player, " or ""}{Util.GetPath(
+					Identifier,
+					false,
+					Scope
+				)}()))`
+			)
+		end
 
 		local IterTypes = `number, {Context == "Server" and "Player, " or ""}{Types}`
 
-		local Next = Blocks.Function("", "", `({IterTypes})`)
-			:Line("index += 1")
-			:Line("local arguments = Pop(queue)")
-			:Compare("arguments", "nil", "Not")
-			:Return("index, unpack(arguments, 1, arguments.n)")
-			:End()
-			:Return("")
-			:End()
-			:Wrap("return ", "")
+		local Next = Blocks.Function("", "", `({IterTypes})`):Line("index += 1"):Line("local arguments = Pop(queue)")
+		local Popped = Next:Compare("arguments", "nil", "Not")
+		if Context == "Server" then
+			Popped:Line("PolledSizes[queue] -= 1")
+		end
+		Next = Popped:Return("index, unpack(arguments, 1, arguments.n)"):End():Return(""):End():Wrap("return ", "")
 
 		local Deprecated = Blocks.Function(Casing.Next, "", `() -> ({IterTypes})`, true)
 			:Line(`local index = 0`)
@@ -704,14 +728,18 @@ function Declarations.Function(Declaration: Parser.Function)
 	if Context == "Server" then
 		--> Data recieve body
 		Types.u8.Read("InvocationIdentifier", Block)
+		--> Fork: calls queued for a listener that is not connected yet are capped; a refused call is
+		--> answered with a failure at once, so the client does not wait for a reply that cannot come.
 		Block:Line(`local {DataValues} = {Util.GetPath(DataIdentifier, false, Scope)}()`)
 			:Compare(Connection, "nil", "Not")
 			:Line(`task.spawn({Connection}, Player, {DataArguments}, InvocationIdentifier)`)
 			:Branch("Default")
-			:Compare(`#{Queue}`, "256", "Greater")
-			:Line(`warn("[Blink]: Event queue of \\"{Name}\\" exceeded 256, did you forget to implement a listener?")`)
-			:End()
+			:Compare(`#{Queue}`, "MAX_QUEUED_EVENTS", "Less")
 			:Line(`table.insert({Queue}, \{Player, {DataArguments}, InvocationIdentifier\} :: \{any\})`)
+			:Branch("Default")
+			:Line(`ReportQueueFull(Player, "{Name}", {Index})`)
+			:Line(`AnswerFailure(Player, {Index}, InvocationIdentifier)`)
+			:End()
 			:End()
 
 		--> Data listener body
@@ -1381,6 +1409,7 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 			`local INBOUND_BYTES_PER_SECOND = {BytesPerSecond}\n`,
 			`local INBOUND_BURST = {Options.InboundBurst or math.max(BytesPerSecond, MaxPacketSize)}\n`,
 			`local INBOUND_PACKET_FLOOR = {Defaults.PacketFloor}\n`,
+			`local MAX_QUEUED_EVENTS = {Options.MaxQueuedEvents or Defaults.MaxQueuedEvents}\n`,
 		}
 
 		Return.Push(`{Casing.SetDropHandler} = SetDropHandler,`, 0, 1)

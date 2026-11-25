@@ -1,0 +1,8 @@
+-- Runtime fixture (fork): events a client can send while the server has no listener for them.
+option ServerOutput = "./out/Queues/Server.luau"
+option ClientOutput = "./out/Queues/Client.luau"
+option ManualReplication = true
+
+event Ping { From: Client, Type: Reliable, Call: SingleSync, Data: u8 }
+function Ask { Yield: Coroutine, Data: u8, Return: u8 }
+event Feed { From: Client, Type: Reliable, Call: SingleSync, Poll: true, Data: u8 }

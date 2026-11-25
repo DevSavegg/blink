@@ -92,6 +92,7 @@ export type Options = {
 	MaxInstancesPerPacket: number?,
 	InboundBytesPerSecond: number?,
 	InboundBurst: number?,
+	MaxQueuedEvents: number?,
 }
 
 export type Body = Node<"Body", {
@@ -205,6 +206,7 @@ local OPTIONS: { [string]: Lexer.Types } = {
 	MaxInstancesPerPacket = "Number",
 	InboundBytesPerSecond = "Number",
 	InboundBurst = "Number",
+	MaxQueuedEvents = "Number",
 }
 
 --> Inbound limits (fork): the smallest value each numeric option accepts. `InboundBytesPerSecond = 0`
@@ -215,6 +217,7 @@ local NUMERIC_OPTION_MINIMUMS: { [string]: number } = {
 	MaxInstancesPerPacket = 1,
 	InboundBytesPerSecond = 0,
 	InboundBurst = 1,
+	MaxQueuedEvents = 1,
 }
 
 local EVENT: { EventOption } = {

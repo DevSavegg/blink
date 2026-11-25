@@ -29,6 +29,9 @@ Measured (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier1.txt`):
 - a crafted 1 MB packet costs 0.016 ms instead of 65 ms;
 - 100 KB of one-entity events stops at 1,024 events instead of 11,111 listener calls.
 
+### Fixes found while triaging upstream's tracker (2026-11-25)
+- ✅ Queues for listeners that aren't connected yet were unbounded, and warned once per event. A client could grow server memory and flood the output. They're now capped (`MaxQueuedEvents`), with a one-time hint per event. Not in upstream's tracker.
+
 ### Tier 2: decode speed (wire-compatible)
 6. ✅ Build each struct with a pre-shaped constructor (`{a = false, b = false, …}`) instead of `{}` followed by field writes, so the table never rehashes as fields arrive. Optional fields write `nil` first, so an absent optional is still absent. A tagged enum's variant includes the tag key.
    Studio medians (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier2.txt`): `Entity[100]` decodes **2.1× faster**
@@ -51,6 +54,7 @@ Run framing, streams/stamps, converters. They add a lot of code for little gain 
 | `MaxInstancesPerPacket` | `1024` | Instances one packet may carry (`Instances`). |
 | `InboundBytesPerSecond` | `1048576` | Per-player byte budget. Each packet costs its size, at least 64 bytes (`Budget`). `0` turns it off. |
 | `InboundBurst` | larger of the two above | The most budget a player can bank. Must be at least `MaxPacketSize` (error E3017). |
+| `MaxQueuedEvents` | `256` | Events or calls kept for a listener that isn't connected yet. Polled events get this many per player slot (`Players.MaxPlayers`). Past it, events are dropped (`Queue`) and calls are answered with a failure. |
 
 The defaults are deliberately generous: an honest client sends one batched packet per frame. Measure a game's
 real per-player upload before tightening them in its schema. (Thaiban City's hasn't been measured yet.)
@@ -58,7 +62,7 @@ real per-player upload before tightening them in its schema. (Thaiban City's has
 Server API added next to `StepReplication` (casing follows `option Casing`):
 
 ```luau
-Net.SetDropHandler(function(Player, Reason, Count, Detail) end)    -- "Malformed" | "Oversized" | "Instances" | "Events" | "Budget"
+Net.SetDropHandler(function(Player, Reason, Count, Detail) end)    -- "Malformed" | "Oversized" | "Instances" | "Events" | "Budget" | "Queue"
 Net.SetDecodeErrorHandler(function(Player, Channel, Message, Count) end)
 ```
 
@@ -94,6 +98,13 @@ lune run src/CLI/init.luau path/to/schema.blink
 The compiler is pure Luau, so it can also run inside Studio, the way the plugin does.
 
 ### Testing
+`test/Runtime` loads generated modules in Lune against a small mock of the Roblox services they use
+(`Mock.luau`), and checks runtime behaviour:
+
+```bash
+lune run test/Runtime/Queues.luau
+```
+
 `test/Roundtrip` round-trips every kind of struct field, with optionals present and absent, through the generated
 `Types` module in Lune:
 

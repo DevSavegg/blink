@@ -74,6 +74,21 @@ for name, value in cases do
 	fails += ok and 0 or 1
 end
 
+local keywordCases = {
+	present = {
+		["end"] = 1,
+		["function"] = "f",
+		flags = { ["and"] = true, ["or"] = false },
+		choice = { ["then"] = "Yes", ["do"] = 3 },
+	},
+	absent = { ["end"] = 2, flags = { ["and"] = false, ["or"] = true }, choice = { ["then"] = "No" } },
+}
+for name, value in keywordCases do
+	local ok, why = deepEqual(value, Types.Keywords.Read(Types.Keywords.Write(value)), "keywords." .. name)
+	print((ok and "PASS " or "FAIL ") .. "keywords." .. name .. (why and (": " .. why) or ""))
+	fails += ok and 0 or 1
+end
+
 local many = { items = { full, sparse, circleNoLabel, sparse, full } }
 local ok, why = deepEqual(many, Types.Many.Read(Types.Many.Write(many)), "many")
 print((ok and "PASS " or "FAIL ") .. "many" .. (why and (": " .. why) or ""))

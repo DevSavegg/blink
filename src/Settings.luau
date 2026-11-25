@@ -37,6 +37,32 @@ export type InboundLimits = {
 	MaxQueuedEvents: number,
 }
 
+--> Luau's reserved words (fork). A field, flag or tag with one of these names is emitted quoted, as
+--> `Value["end"]`; a declaration may not use one, since its name becomes part of the module's API.
+local LUAU_KEYWORDS = table.freeze({
+	["and"] = true,
+	["break"] = true,
+	["do"] = true,
+	["else"] = true,
+	["elseif"] = true,
+	["end"] = true,
+	["false"] = true,
+	["for"] = true,
+	["function"] = true,
+	["if"] = true,
+	["in"] = true,
+	["local"] = true,
+	["nil"] = true,
+	["not"] = true,
+	["or"] = true,
+	["repeat"] = true,
+	["return"] = true,
+	["then"] = true,
+	["true"] = true,
+	["until"] = true,
+	["while"] = true,
+})
+
 --> Client defaults (fork). An Invoke that gets no reply within InvocationTimeout seconds fails instead of
 --> waiting forever; 0 waits forever, as upstream does.
 local CLIENT_DEFAULTS = table.freeze({
@@ -245,6 +271,7 @@ return {
 	Primtives = Primitives,
 	InboundDefaults = INBOUND_DEFAULTS,
 	ClientDefaults = CLIENT_DEFAULTS,
+	LuauKeywords = LUAU_KEYWORDS,
 	GetCasing = function(Case: Case): Cases
 		local Index = Indexes[Case]
 		if not Index then

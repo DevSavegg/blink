@@ -1,0 +1,10 @@
+-- Runtime fixture (fork): the API as a story or test sees it, outside a running game (#81).
+option ServerOutput = "./out/EditMode/Server.luau"
+option ClientOutput = "./out/EditMode/Client.luau"
+
+event Chat { From: Server, Type: Reliable, Call: SingleSync, Data: string }
+event Feed { From: Server, Type: Reliable, Call: SingleSync, Poll: true, Data: u8 }
+event Ping { From: Client, Type: Reliable, Call: SingleSync, Data: u8 }
+event Move { From: Client, Type: Unreliable, Call: SingleSync, Data: u8 }
+event Tick { From: Client, Type: Reliable, Call: SingleSync, Poll: true, Data: u8 }
+function Ask { Yield: Coroutine, Data: u8, Return: u8 }

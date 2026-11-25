@@ -87,6 +87,11 @@ export type Options = {
 	WriteValidations: boolean?,
 	ManualReplication: boolean?,
 	RemoteScope: string?,
+	MaxPacketSize: number?,
+	MaxEventsPerPacket: number?,
+	MaxInstancesPerPacket: number?,
+	InboundBytesPerSecond: number?,
+	InboundBurst: number?,
 }
 
 export type Body = Node<"Body", {
@@ -195,6 +200,21 @@ local OPTIONS: { [string]: Lexer.Types } = {
 	WriteValidations = "Boolean",
 	ManualReplication = "Boolean",
 	RemoteScope = "String",
+	MaxPacketSize = "Number",
+	MaxEventsPerPacket = "Number",
+	MaxInstancesPerPacket = "Number",
+	InboundBytesPerSecond = "Number",
+	InboundBurst = "Number",
+}
+
+--> Inbound limits (fork): the smallest value each numeric option accepts. `InboundBytesPerSecond = 0`
+--> turns the per-player byte budget off; every other limit must be at least 1.
+local NUMERIC_OPTION_MINIMUMS: { [string]: number } = {
+	MaxPacketSize = 1,
+	MaxEventsPerPacket = 1,
+	MaxInstancesPerPacket = 1,
+	InboundBytesPerSecond = 0,
+	InboundBurst = 1,
 }
 
 local EVENT: { EventOption } = {
@@ -286,6 +306,8 @@ local GENERICS_TYPES = {
 
 local RESERVED = {
 	StepReplication = true,
+	SetDropHandler = true,
+	SetDecodeErrorHandler = true,
 }
 
 local PRIMITIVES = Settings.Primtives
@@ -924,6 +946,7 @@ end
 
 function Parser.Options(self: Parser): Options
 	local Options: Options = {}
+	local OptionTokens: { [string]: Lexer.Token } = {}
 	for Index = 1, TotalOptions do
 		local Keyword = self:Peek()
 		if Keyword.Value ~= "option" then
@@ -947,7 +970,31 @@ function Parser.Options(self: Parser): Options
 		end
 
 		local Value = self:Consume(Type)
+		local Minimum = NUMERIC_OPTION_MINIMUMS[Name]
+		if Minimum and ((Value.Value :: any) < Minimum or (Value.Value :: any) % 1 ~= 0) then
+			Error.new(Error.AnalyzeInvalidOptionValue, self.Source, `Invalid value for option "{Name}"`, self.File)
+				:Primary(Value, `Expected a whole number of at least {Minimum}`)
+				:Emit()
+		end
+
 		Options[Name] = Value.Value
+		OptionTokens[Name] = Value
+	end
+
+	--> A burst smaller than the largest accepted packet would refuse that packet forever.
+	local BurstToken = OptionTokens.InboundBurst
+	if BurstToken then
+		local MaxPacketSize = Options.MaxPacketSize or Settings.InboundDefaults.MaxPacketSize
+		if (Options.InboundBurst :: number) < MaxPacketSize then
+			Error.new(
+				Error.AnalyzeInvalidOptionValue,
+				self.Source,
+				`Invalid value for option "InboundBurst"`,
+				self.File
+			)
+				:Primary(BurstToken, `Expected at least MaxPacketSize ({MaxPacketSize})`)
+				:Emit()
+		end
 	end
 
 	return Options

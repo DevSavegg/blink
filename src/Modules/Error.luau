@@ -90,6 +90,7 @@ local Error = {
 	AnalyzeUnknownImport = 3014,
 	AnalyzeErrorWhileImporting = 3015,
 	AnalyzeOptionAfterStart = 3016,
+	AnalyzeInvalidOptionValue = 3017,
 }
 
 Error.__index = Error

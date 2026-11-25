@@ -37,6 +37,12 @@ export type InboundLimits = {
 	MaxQueuedEvents: number,
 }
 
+--> Client defaults (fork). An Invoke that gets no reply within InvocationTimeout seconds fails instead of
+--> waiting forever; 0 waits forever, as upstream does.
+local CLIENT_DEFAULTS = table.freeze({
+	InvocationTimeout = 30,
+})
+
 local INBOUND_DEFAULTS: InboundLimits = table.freeze({
 	MaxPacketSize = 262144, --> 256 KB in one packet
 	MaxEventsPerPacket = 1024,
@@ -238,6 +244,7 @@ return {
 
 	Primtives = Primitives,
 	InboundDefaults = INBOUND_DEFAULTS,
+	ClientDefaults = CLIENT_DEFAULTS,
 	GetCasing = function(Case: Case): Cases
 		local Index = Indexes[Case]
 		if not Index then

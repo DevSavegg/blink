@@ -1,0 +1,8 @@
+-- Runtime fixture (fork): client calls that get answered, fail, or never get a reply.
+option ServerOutput = "./out/Invoke/Server.luau"
+option ClientOutput = "./out/Invoke/Client.luau"
+option ManualReplication = true
+option InvocationTimeout = 1
+
+function Ask { Yield: Coroutine, Data: u8, Return: u8 }
+event Note { From: Server, Type: Reliable, Call: SingleSync, Data: u8 }

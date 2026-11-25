@@ -390,7 +390,18 @@ function Declarations.Event(Declaration: Parser.Event)
 			local PathExpr = IsSingle and Connection or "Listener"
 			local CallExpr = IsSync and `{PathExpr}({ListenerArguments})`
 				or `task.spawn({PathExpr}, {ListenerArguments})`
+
+			--> Fork: on the server, DecodePacket tells a decode failure from a listener error by this flag.
+			local MarksListener = IsSync and Context == "Server"
+			if MarksListener then
+				CallListener = CallListener:Line("Decoding = false")
+			end
+
 			CallListener = CallListener:Line(CallExpr)
+
+			if MarksListener then
+				CallListener = CallListener:Line("Decoding = true")
+			end
 		end
 
 		Block:Line(`local {Values} = {Util.GetPath(Identifier, false, Scope)}()`)
@@ -825,7 +836,15 @@ function Declarations.Array(Declaration: Parser.Array, Read: Blocks.Block, Write
 	end
 
 	--> Array
-	Read:Line(`{Read:Declare(Variable)} = table.create(Length)`)
+	if Context == "Server" then
+		--> Fork: a client controls Length, so reserve no more slots than there are bytes left in the
+		--> packet. The table still grows if a zero-sized element type needs more; the result is the same.
+		Read:Line(
+			`{Read:Declare(Variable)} = table.create(math.clamp(buffer.len(RecieveBuffer) - RecieveCursor, 0, Length))`
+		)
+	else
+		Read:Line(`{Read:Declare(Variable)} = table.create(Length)`)
+	end
 
 	--> Body
 	Read = Read:Loop("Index = 1", "Length")
@@ -1217,21 +1236,39 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 	local Signal = Context == "Client" and "OnClientEvent" or "OnServerEvent"
 	local Arguments = (Context == "Server" and "Player: Player, " or "") .. "Buffer: buffer, Instances: {Instance}"
 
-	Reliables = Blocks.Connection(`Reliable.{Signal}`, Arguments)
-	Unreliables = Blocks.Connection(`Unreliable.{Signal}`, Arguments)
+	local IsServer = (Context == "Server")
+	if IsServer then
+		--> Fork: the server's receive loops are local functions, run by DecodePacket under pcall from
+		--> connections that check each packet first (see ServerConnection below).
+		Reliables = Blocks.Function("DecodeReliable", "Player: Player, Size: number", "()", false, true)
+		Unreliables = Blocks.Function("DecodeUnreliable", "Player: Player, Size: number", "()", false, true)
+	else
+		Reliables = Blocks.Connection(`Reliable.{Signal}`, Arguments)
+		Unreliables = Blocks.Connection(`Unreliable.{Signal}`, Arguments)
 
-	Reliables:Lines(EVENT_BODY, 1)
-	Unreliables:Lines(EVENT_BODY, 1)
+		Reliables:Lines(EVENT_BODY, 1)
+		Unreliables:Lines(EVENT_BODY, 1)
 
-	if Options.SyncValidation then
-		Reliables:Lines(EVENT_SYNC_VALIDATION, 1)
-		Unreliables:Lines(EVENT_SYNC_VALIDATION, 1)
+		if Options.SyncValidation then
+			Reliables:Lines(EVENT_SYNC_VALIDATION, 1)
+			Unreliables:Lines(EVENT_SYNC_VALIDATION, 1)
+		end
 	end
 
 	Reliables = Reliables:While("RecieveCursor < Size")
 	Unreliables = Unreliables:While("RecieveCursor < Size")
 	Types.u8.Read("Index", Reliables)
 	Types.u8.Read("Index", Unreliables)
+
+	if IsServer then
+		for _, Loop in { Reliables, Unreliables } do
+			Loop:Compare("DecodeRemaining", "0", "LessOrEquals")
+				:Line(`ReportDrop(Player, "Events", MAX_EVENTS_PER_PACKET)`)
+				:Line("break")
+				:End()
+			Loop:Line("DecodeRemaining -= 1")
+		end
+	end
 
 	--> Import async libraries
 	if Options.FutureLibrary then
@@ -1256,16 +1293,72 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 	--> Generate context source
 	local Source = Sources[Context]
 
+	local UNKNOWN_INDEX = `error(\`Unknown event index: \{Index\}\`)`
 	if Channels.Reliable.Listening then
+		if IsServer then
+			Reliables = Reliables:Branch("Default"):Line(UNKNOWN_INDEX)
+		end
 		Reliables = Reliables:End()
+	elseif IsServer then
+		Reliables:Line(UNKNOWN_INDEX)
 	end
 
 	if Channels.Unreliable.Listening then
+		if IsServer then
+			Unreliables = Unreliables:Branch("Default"):Line(UNKNOWN_INDEX)
+		end
 		Unreliables = Unreliables:End()
+	elseif IsServer then
+		Unreliables:Line(UNKNOWN_INDEX)
 	end
 
 	Reliables = Reliables:End():End()
 	Unreliables = Unreliables:End():End()
+
+	--> Fork: the server's connections check a packet before DecodePacket runs its loop.
+	local ServerConnections = {}
+	local ServerLimits = {}
+	if IsServer then
+		for _, Channel in { "Reliable", "Unreliable" } do
+			table.insert(
+				ServerConnections,
+				`{Channel}.OnServerEvent:Connect(function(Player: Player, Buffer: buffer, Instances: \{Instance\})\n`
+			)
+			table.insert(ServerConnections, "\tif not AcceptPacket(Player, Buffer, Instances) then\n")
+			table.insert(ServerConnections, "\t\treturn\n")
+			table.insert(ServerConnections, "\tend\n")
+			for _, Line in EVENT_BODY do
+				table.insert(ServerConnections, `\t{Line}`)
+			end
+			if Options.SyncValidation then
+				for _, Line in EVENT_SYNC_VALIDATION do
+					table.insert(ServerConnections, `\t{Line}`)
+				end
+			end
+			table.insert(ServerConnections, `\tDecodePacket(Decode{Channel}, Player, Size, "{Channel}")\n`)
+			table.insert(ServerConnections, "end)\n")
+		end
+
+		local Defaults = Settings.InboundDefaults
+		local MaxPacketSize = Options.MaxPacketSize or Defaults.MaxPacketSize
+		local BytesPerSecond = Options.InboundBytesPerSecond or Defaults.InboundBytesPerSecond
+		ServerLimits = {
+			`local MAX_PACKET_SIZE = {MaxPacketSize}\n`,
+			`local MAX_EVENTS_PER_PACKET = {Options.MaxEventsPerPacket or Defaults.MaxEventsPerPacket}\n`,
+			`local MAX_INSTANCES_PER_PACKET = {Options.MaxInstancesPerPacket or Defaults.MaxInstancesPerPacket}\n`,
+			`local INBOUND_BYTES_PER_SECOND = {BytesPerSecond}\n`,
+			`local INBOUND_BURST = {Options.InboundBurst or math.max(BytesPerSecond, MaxPacketSize)}\n`,
+			`local INBOUND_PACKET_FLOOR = {Defaults.PacketFloor}\n`,
+		}
+
+		Return.Push(`{Casing.SetDropHandler} = SetDropHandler,`, 0, 1)
+		Return.Push(`{Casing.SetDecodeErrorHandler} = SetDecodeErrorHandler,`, 0, 1)
+	end
+
+	if IsServer then
+		Noop.Push(`{Casing.SetDropHandler} = NOOP,`, 0, 2)
+		Noop.Push(`{Casing.SetDecodeErrorHandler} = NOOP,`, 0, 2)
+	end
 
 	Noop.Push(`\})`, 0, 1)
 	Noop.Push(`return Returns :: {EVENTS_TYPE}`, 0, 1)
@@ -1300,10 +1393,12 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 		LuauTypes.DumpLines(),
 		UserTypes.DumpLines(),
 		Noop.DumpLines(),
+		ServerLimits,
 		string.split(Source[2], "\r"),
 		Replication.DumpLines(),
 		Reliables.Content,
 		Unreliables.Content,
+		ServerConnections,
 		Return.DumpLines(),
 		{ `type {EVENTS_TYPE} = typeof(Returns)\n`, `return Returns :: {EVENTS_TYPE}` }
 	)

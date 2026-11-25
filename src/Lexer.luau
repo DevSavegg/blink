@@ -136,6 +136,15 @@ local TOKENS = {
 			return "Identifier", Token
 		end,
 	},
+
+	--> Bare integer literal, for numeric options (`option MaxPacketSize = 8192`). Last, so ranges, array
+	--> sizes and identifiers keep matching first.
+	{
+		"^%d+",
+		function(Token: string)
+			return "Number", tonumber(Token)
+		end,
+	},
 }
 
 local SKIPPED_TOKENS = {

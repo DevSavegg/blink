@@ -317,6 +317,18 @@ return function(FileContext: Context, AbstractSyntaxTree: AbstractSyntaxTree): s
 	StringBuilder.Push(VERSION_HEADER)
 	StringBuilder.Push(`export declare const {Casing.StepReplication}: () => void`)
 
+	if FileContext == "Server" then
+		StringBuilder.Push(
+			`export type BLINK_DROP_REASON = "Malformed" | "Oversized" | "Instances" | "Events" | "Budget"`
+		)
+		StringBuilder.Push(
+			`export declare const {Casing.SetDropHandler}: (handler?: (player: Player, reason: BLINK_DROP_REASON, count: number, detail: number) => void) => void`
+		)
+		StringBuilder.Push(
+			`export declare const {Casing.SetDecodeErrorHandler}: (handler?: (player: Player, channel: string, message: string, count: number) => void) => void`
+		)
+	end
+
 	if _G.VERSION == nil then
 		StringBuilder.Push(TESTING_HEADER)
 	end

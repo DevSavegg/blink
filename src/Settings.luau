@@ -21,7 +21,28 @@ export type Cases = {
 	Iter: string,
 	Read: string,
 	Write: string,
+	SetDropHandler: string,
+	SetDecodeErrorHandler: string,
 }
+
+--> Inbound limits the generated server enforces when a schema sets none (fork). Generous on purpose:
+--> they bound what one hostile packet or one player can cost the server, without refusing what an
+--> honest Blink client sends. A schema tightens them with the matching options.
+export type InboundLimits = {
+	MaxPacketSize: number,
+	MaxEventsPerPacket: number,
+	MaxInstancesPerPacket: number,
+	InboundBytesPerSecond: number,
+	PacketFloor: number,
+}
+
+local INBOUND_DEFAULTS: InboundLimits = table.freeze({
+	MaxPacketSize = 262144, --> 256 KB in one packet
+	MaxEventsPerPacket = 1024,
+	MaxInstancesPerPacket = 1024,
+	InboundBytesPerSecond = 1048576, --> 1 MB a second per player; 0 turns the budget off
+	PacketFloor = 64, --> what a packet costs the budget at least, so floods of tiny packets still pay
+})
 
 export type Primitive = {
 	Bounds: NumberRange?,
@@ -50,6 +71,8 @@ local Cases = {
 	Iter = { "Iter", "iter", "iter" },
 	Read = { "Read", "read", "read" },
 	Write = { "Write", "write", "write" },
+	SetDropHandler = { "SetDropHandler", "setDropHandler", "set_drop_handler" },
+	SetDecodeErrorHandler = { "SetDecodeErrorHandler", "setDecodeErrorHandler", "set_decode_error_handler" },
 }
 
 local Primitives: { [string]: Primitive } = {
@@ -212,6 +235,7 @@ return {
 	},
 
 	Primtives = Primitives,
+	InboundDefaults = INBOUND_DEFAULTS,
 	GetCasing = function(Case: Case): Cases
 		local Index = Indexes[Case]
 		if not Index then

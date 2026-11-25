@@ -30,7 +30,10 @@ Measured (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier1.txt`):
 - 100 KB of one-entity events stops at 1,024 events instead of 11,111 listener calls.
 
 ### Tier 2: decode speed (wire-compatible)
-6. Build each struct with a pre-shaped constructor (`{a = false, b = false, …}`) instead of `{}` followed by field writes. This is most of BlinkBlox's 2–5× struct-array decode win.
+6. ✅ Build each struct with a pre-shaped constructor (`{a = false, b = false, …}`) instead of `{}` followed by field writes, so the table never rehashes as fields arrive. Optional fields write `nil` first, so an absent optional is still absent. A tagged enum's variant includes the tag key.
+   Studio medians (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier2.txt`): `Entity[100]` decodes **2.1× faster**
+   (175 vs 373 µs per 5 events), `Mixed[50]` 1.3×, single small structs about 1.3×. Shapes without structs are unchanged.
+   This changes decode code on both sides, client modules included. It's still wire-compatible: each side gets the gain once it's regenerated.
 
 ### Tier 3: optional **[wire]**
 7. Bit-packed `boolean[]` (8 per byte).
@@ -91,6 +94,16 @@ lune run src/CLI/init.luau path/to/schema.blink
 The compiler is pure Luau, so it can also run inside Studio, the way the plugin does.
 
 ### Testing
+`test/Roundtrip` round-trips every kind of struct field, with optionals present and absent, through the generated
+`Types` module in Lune:
+
+```bash
+lune run src/CLI/init.luau test/Roundtrip/Shapes.blink -y -q
+```
+```bash
+lune run test/Roundtrip/Roundtrip.luau test/Roundtrip/out/Types.luau
+```
+
 Upstream's `test/` compiles the sample sources and needs a Roblox run. The regression suite for this fork is
 the netbench harness (`Thaiban-City/netbench/harness/BB*.luau`):
 - hostile-packet probes (`BBHostile.luau`)

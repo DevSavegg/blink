@@ -96,6 +96,10 @@ local Options: Parser.Options
 local Generators = {}
 local Declarations = {}
 
+--> Fork: a tagged enum's tag field, handed to the variant struct read next, so that struct's
+--> pre-shaped constructor includes the tag key too (see Declarations.Struct).
+local PendingStructKey: string? = nil
+
 local Channels: { [string]: { Count: number, Listening: boolean } } = {
 	Reliable = { Count = 0, Listening = false },
 	Unreliable = { Count = 0, Listening = false },
@@ -261,7 +265,27 @@ end
 
 function Declarations.Struct(Declaration: Parser.Struct, Read: Blocks.Block, Write: Blocks.Block, Variable: string)
 	local Value = Declaration.Value
-	Read:Line(`{Read:Declare(Variable)} = \{\} :: any`)
+
+	--> Fork: build the struct from a pre-shaped constructor. A Luau table that starts empty rehashes
+	--> as each field is written; one created with every key already present does not. The placeholders
+	--> are overwritten by the field reads below; optional fields write nil first (Declarations.Optional),
+	--> so an absent optional is still absent.
+	local Keys = {}
+	for _, Field in Value.Values do
+		table.insert(Keys, `{FormatKey(Field.Name)} = false`)
+	end
+
+	local ExtraKey = PendingStructKey
+	PendingStructKey = nil
+	if ExtraKey then
+		table.insert(Keys, `{FormatKey(ExtraKey)} = false`)
+	end
+
+	if #Keys > 0 then
+		Read:Line(`{Read:Declare(Variable)} = \{{table.concat(Keys, ", ")}\} :: any`)
+	else
+		Read:Line(`{Read:Declare(Variable)} = \{\} :: any`)
+	end
 
 	for _, Field in Value.Values do
 		local Name = Field.Name
@@ -304,7 +328,9 @@ function Declarations.TagEnum(Declaration: Parser.TagEnum, Read: Blocks.Block, W
 		Write:_lineFront(`buffer.writeu8(SendBuffer, {Allocation}, {Index - 1})`)
 		Write:Advance(1)
 
+		PendingStructKey = Tag
 		Generators.UserType(Variant, Read, Write, Variable)
+		PendingStructKey = nil
 		Read:Line(`{TagIndex} = {Name}`)
 	end
 
@@ -865,6 +891,12 @@ end
 
 function Declarations.Optional(Declaration: Parser.Optional, Read: Blocks.Block, Write: Blocks.Block, Variable: string)
 	Read:Declare(Variable, true)
+
+	--> Fork: a struct field starts as a `false` placeholder (Declarations.Struct), and an absent optional
+	--> is never written, so clear it first.
+	if string.find(Variable, "[%.%[]") then
+		Read:Line(`{Variable} = nil`)
+	end
 
 	local Of = Declaration.Value.Of
 	local IsInstance = if Of.Type == "Primitive" then Of.Tokens.Primitive.Value == "Instance" else false

@@ -152,7 +152,7 @@ function Utility.Compile(Path: string, Options: CompileOptions)
 
 	local TypesSource: string?
 	if FileOptions.TypesOutput then
-		TypesOutput = if PathParser.PathType(Path) == "absolute"
+		TypesOutput = if PathParser.PathType(FileOptions.TypesOutput) == "absolute"
 			then FileOptions.TypesOutput
 			else `{FileDirectory}{FileOptions.TypesOutput}`
 		TypesSource = Generator.GenerateShared(AbstractSyntaxTree)

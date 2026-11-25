@@ -24,3 +24,6 @@ sourcemap.json
 *.rbxl
 *.rbxl.lock
 test/Sources/Issue.blink
+
+# Roundtrip test output (fork)
+test/Roundtrip/out/

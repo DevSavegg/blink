@@ -1,0 +1,57 @@
+-- Round-trip fixture (fork). Every kind of struct field, optionals present and absent at several depths,
+-- a tagged enum whose variant has an optional. Run:
+--   lune run src/CLI/init.luau test/Roundtrip/Shapes.blink -y -q
+--   lune run test/Roundtrip/Roundtrip.luau test/Roundtrip/out/Types.luau
+-- A decoded value must equal the original key by key: a leftover struct placeholder (false) fails it.
+
+option TypesOutput = "./out/Types.luau"
+option ServerOutput = "./out/Server.luau"
+option ClientOutput = "./out/Client.luau"
+
+enum Mood = { Happy, Sad, Bored }
+set Flags = { A, B, C }
+map Scores = {[string]: u8}
+
+struct Inner {
+    a: u8,
+    b: string,
+    c: u16?
+}
+
+enum Shape = "kind" {
+    Circle {
+        r: f64,
+        label: string?
+    },
+    Square {
+        side: u8
+    }
+}
+
+export struct Outer {
+    id: u16,
+    name: string,
+    opt: u8?,
+    optStr: string?,
+    optInner: Inner?,
+    inner: Inner,
+    list: Inner[0..8],
+    optList: u8[0..4]?,
+    mood: Mood,
+    flags: Flags,
+    scores: Scores,
+    flag: boolean,
+    f: f64,
+    shape: Shape,
+    nested: struct {
+        deep: struct {
+            x: u8,
+            y: u8?
+        },
+        z: string?
+    }
+}
+
+export struct Many {
+    items: Outer[0..16]
+}

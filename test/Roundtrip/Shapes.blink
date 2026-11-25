@@ -52,6 +52,22 @@ export struct Outer {
     }
 }
 
+-- Luau keywords as field, flag, tag and variant-field names: emitted quoted (Value["end"]).
+set KeywordFlags = { and, or }
+enum KeywordChoice = "then" {
+    Yes {
+        do: u8
+    },
+    No {}
+}
+
+export struct Keywords {
+    ["end"]: u8,
+    function: string?,
+    flags: KeywordFlags,
+    choice: KeywordChoice
+}
+
 export struct Many {
     items: Outer[0..16]
 }

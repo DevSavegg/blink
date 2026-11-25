@@ -156,6 +156,7 @@ function Mock.Load(Path: string, Context: "Server" | "Client", Options: Options?
 	}
 
 	local Environment = setmetatable({
+		_G = {}, --> each module gets its own, as each Roblox VM does, so their duplicate guards don't collide
 		game = Game,
 		Instance = { new = NewInstance },
 		task = task,

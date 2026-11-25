@@ -110,7 +110,8 @@ local Primitives = Prefabs.Primitives
 local Structures = Prefabs.Structures
 
 local function IsValidIdentifier(Identifier: string): boolean
-	return Identifier:match("%a%w*") == Identifier
+	--> Fork: a Luau keyword is not usable bare either (`Value.end` does not parse), so it is quoted too.
+	return Identifier:match("%a%w*") == Identifier and not Settings.LuauKeywords[Identifier]
 end
 
 local function FormatKey(Key: string): string
@@ -494,7 +495,7 @@ function Declarations.Event(Declaration: Parser.Event)
 				:End()
 		end
 
-		Noop.Push(`{Casing.On} = NOOP`, 0, Indent + 1)
+		Noop.Push(`{Casing.On} = NOOP_CONNECT`, 0, Indent + 1)
 		Body.PushLines(Listener.Content, 0, Indent + 1)
 	elseif Value.From ~= Context and IsPolling then
 		Events.Push(`{Queue} = CreateQueue()`)
@@ -550,8 +551,8 @@ function Declarations.Event(Declaration: Parser.Event)
 			:End()
 			:Wrap("", ",")
 
-		Noop.Push(`{Casing.Iter} = NOOP,`, 0, Indent + 1)
-		Noop.Push(`{Casing.Next} = NOOP`, 0, Indent + 1)
+		Noop.Push(`{Casing.Iter} = NOOP_ITER,`, 0, Indent + 1)
+		Noop.Push(`{Casing.Next} = NOOP_ITER`, 0, Indent + 1)
 
 		Body.PushLines(Iter.Content, 0, Indent + 1)
 		Body.Push("--- @deprecated v0.14.1 -- Use `Iter` instead.", 0, Indent + 1)
@@ -779,7 +780,7 @@ function Declarations.Function(Declaration: Parser.Function)
 			:Lines(FlushQueue.Content, 1)
 			:End()
 
-		Noop.Push(`{Casing.On} = NOOP`, 0, Indent + 1)
+		Noop.Push(`{Casing.On} = NOOP_CONNECT`, 0, Indent + 1)
 		Body.PushLines(Listener.Content, 0, 2)
 	else
 		--> Return recieve body
@@ -1315,6 +1316,10 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 	--> Setup noop
 	Noop.Push(`if not RunService:IsRunning() then`)
 	Noop.Push(`local NOOP = function() end`, 0, 1)
+	--> Fork (#81): outside a running game, `On` still returns a disconnect function, `Iter` still returns
+	--> something to loop over (nothing), and StepReplication exists, so stories and tests can use the API.
+	Noop.Push(`local NOOP_CONNECT = function() return NOOP end`, 0, 1)
+	Noop.Push(`local NOOP_ITER = function() return NOOP end`, 0, 1)
 	Noop.Push(`local Returns = table.freeze(\{`, 0, 1)
 
 	--> Setup remote events
@@ -1439,6 +1444,10 @@ function Generator.Generate(FileContext: Context, AbstractSyntaxTree: Parser.Bod
 
 		Return.Push(`{Casing.SetDropHandler} = SetDropHandler,`, 0, 1)
 		Return.Push(`{Casing.SetDecodeErrorHandler} = SetDecodeErrorHandler,`, 0, 1)
+	end
+
+	if Context ~= "Shared" then
+		Noop.Push(`{Casing.StepReplication} = NOOP,`, 0, 2)
 	end
 
 	if IsServer then

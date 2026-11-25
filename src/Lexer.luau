@@ -78,7 +78,7 @@ local TOKENS = {
 
 	--> Attribute patterns
 	{ "^?", "Optional" },
-	{ `^%(%a+%)`, "Class" },
+	{ `^%(%a%w*%)`, "Class" }, --> fork (#75): classes such as Vector3Value contain digits
 	{ `^%[]`, "Array" },
 	{ `^%({NUMBER}%)`, "Range" },
 	{ `^%({NUMBER}{DOTS}%)`, "Range" },

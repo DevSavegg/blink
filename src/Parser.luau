@@ -1034,6 +1034,14 @@ function Parser.Declarations(self: Parser): { Declaration }
 		local Name = self:ConsumeText()
 		local Declaration: Declaration
 
+		--> Fork: a declaration's name becomes part of the generated module (`Net.repeat.Fire`), where a Luau
+		--> keyword does not parse.
+		if Settings.LuauKeywords[Name.Value] then
+			Error.new(Error.AnalyzeReservedIdentifier, self.Source, `Reserved identifier`, self.File)
+				:Primary(Name, `"{Name.Value}" is a Luau keyword and cannot name a declaration.`)
+				:Emit()
+		end
+
 		if Keyword.Value == "option" then
 			Error.new(Error.AnalyzeOptionAfterStart, self.Source, "Option set after start of file", self.File)
 				:Primary(Keyword, "Move to the start of the file")

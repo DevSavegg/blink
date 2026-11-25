@@ -32,6 +32,9 @@ Measured (`Thaiban-City/netbench/results/raw-2026-11-25-fork-tier1.txt`):
 ### Fixes found while triaging upstream's tracker (2026-11-25)
 - ✅ #107: an `Invoke` that got no reply waited forever and held its slot (one of 256). Tier 1 made that more likely, because a refused packet's calls are never answered. Calls now fail after `InvocationTimeout` seconds. A late reply is discarded, without reaching the next caller.
 - ✅ A failure reply (`[index, id, 0]`) put the client's cursor one byte too far, so every later event in that packet was decoded from the wrong offset. The success byte is now read on its own. Not in upstream's tracker.
+- ✅ #81: outside a running game (stories, plugins, tests), `On` returned nil, `Iter` returned nil and `StepReplication` was missing. The stub API now keeps its shape.
+- ✅ #75: `Instance(Vector3Value)` and other classes containing digits were refused by the lexer.
+- ✅ Luau keywords as names produced modules that didn't parse (`Value.end`, `function = false`). Fields, set flags, tags and variant fields with keyword names are now quoted (`Value["end"]`). A declaration named after a keyword (`event repeat`) is a compile error, since its name becomes module API. Not in upstream's tracker.
 - ✅ Queues for listeners that aren't connected yet were unbounded, and warned once per event. A client could grow server memory and flood the output. They're now capped (`MaxQueuedEvents`), with a one-time hint per event. Not in upstream's tracker.
 
 ### Tier 2: decode speed (wire-compatible)
@@ -114,6 +117,12 @@ lune run test/Runtime/Queues.luau
 ```
 ```bash
 lune run test/Runtime/Invoke.luau
+```
+```bash
+lune run test/Runtime/EditMode.luau
+```
+```bash
+lune run test/Runtime/Compile.luau
 ```
 
 `test/Roundtrip` round-trips every kind of struct field, with optionals present and absent, through the generated
